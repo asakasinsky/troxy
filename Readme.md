@@ -9,10 +9,12 @@ _Awesome module for HTTP requests via Tor socks5 proxy_
 - GET, POST requests via Tor proxy
 - GZIP support
 - Identity change (IP, User-Agent, etc)
-- Setting specific headers for different platforms
+- Setting specific headers
 
-Original idea by [deadbits](https://gist.github.com/deadbits/5428636)
+Original idea by [deadbits](https://gist.github.com/deadbits/5428636)  
+
 Module include PySocks, a [SocksiPy fork by Anorov](https://github.com/Anorov/PySocks)
+
 User-Agents samples taken from the [Random Agent Spoofer by dbyrne](https://github.com/dillbyrne/random-agent-spoofer)
 
 **Usage:**
