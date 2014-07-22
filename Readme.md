@@ -93,7 +93,7 @@ print proxy.fingerprint('ip', update=True)
 Parsing html via proxy with LXML
 ```python
 import lxml.html as lh
-res = proxy.get(url='http://stackoverflow.com/')
+res = proxy.get(url='https://github.com/')
 doc = lh.fromstring(res)
-print doc.xpath('//div[@id="hlogo"]/a/text()')[0]
+print doc.xpath('//h1[@class="heading"]/text()')[0]
 ```
