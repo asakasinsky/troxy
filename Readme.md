@@ -25,11 +25,82 @@ proxy = Troxy()
 ```
 
 
+...or:
+```python
+proxy = Troxy(
+    timeout=10,
+    host='127.0.0.1',
+    port=9150,
+    control_port=9151,
+    password='mypassword',
+    follow_redirect=True
+)
+```
+
+
 Enable proxy and test it:
 ```python
 proxy.on()
-if proxy.is_tor:
+if proxy.is_tor():
     print('tor proxy running!')
+    print proxy.fingerprint('ip')
+```
+
+
+Get web fingerprint:
+
+```python
+# args is a keys of received json
+# ('Accept-Language', 'Host', 'User-Agent', 'Accept', 'ip')
+#
+# options: plain=True:  fingerprint will return as plain-text
+#          html=True:   fingerprint will return as html
+
+print proxy.fingerprint()
+print proxy.fingerprint('ip', 'User-Agent')
+print proxy.fingerprint('ip', 'User-Agent', plain=True)
+```
+
+
+
+You can set another proxy on «fly». Strongly recomended use SOCKS5 proxy because only via SOCKS5 DNS can be sended.
+```python
+proxy.set(
+    proxytype='SOCKS5',
+    host='61.147.67.2',
+    port=9123,
+)
+print proxy.fingerprint('ip')
+```
+
+
+You can set random headers:
+```python
+print proxy.fingerprint()
+proxy.random_client()
+print proxy.fingerprint()
+```
+
+
+You can set specific headers:
+```python
+"""
+Aliases: 
+    windows, mac, linux, unix, android, ios, 
+    winphone, spider, console, library, misc
+"""
+proxy.iam('ios')
+print proxy.headers
+```
+
+
+Basic-Auth:
+```python
+proxy.basic_auth(
+    top_level_url="http://example.com/private/",
+    username='username',
+    password='password'
+)
 ```
 
 
@@ -46,54 +117,34 @@ print proxy.post(url='http://example.com/', data=post_data)
 ```
 
 
-Get web fingerprint:
+
+New identity (Tor feature):
 ```python
-print proxy.fingerprint('ip', 'User-Agent', update=True)
-```
-
-
-Set random headers:
-```python
-proxy.random_client()
-print proxy.headers
-```
-
-
-Set specific headers:
-```python
-"""
-Aliases: 
-    windows, mac, linux, unix, android, ios, 
-    winphone, spider, console, library, misc
-"""
-proxy.iam('ios')
-print proxy.headers
-```
-
-
-New identity:
-```python
-newidentity = proxy.newidentity(
-    password='mypassword',
-    random_client=False
-)
+newidentity = proxy.newidentity()
 if not newidentity:
     print('Failed to get new identity!')
-print proxy.fingerprint('ip', update=True)
+print proxy.fingerprint('ip')
 ```
 
 
-Disable proxy:
+Disable proxy now:
 ```python
 proxy.off()
-print proxy.fingerprint('ip', update=True)
+print proxy.fingerprint('ip')
 ```
 
 
 Parsing html via proxy with LXML
 ```python
 import lxml.html as lh
-res = proxy.get(url='https://github.com/')
+res = proxy.get(url='https://github.com/')['body']
 doc = lh.fromstring(res)
 print doc.xpath('//h1[@class="heading"]/text()')[0]
+```
+
+... or
+```python
+from lxml import etree
+tree = etree.HTML(proxy.get(url='https://github.com/')['body'])
+print tree.xpath('//h1[@class="heading"]/text()')[0]
 ```
