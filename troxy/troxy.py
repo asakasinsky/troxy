@@ -40,6 +40,7 @@ __status__ = "Development"
 
 
 import os
+import sys
 from random import choice
 import time
 import json
@@ -294,19 +295,29 @@ class Troxy(object):
         """
         self.s = self.__socket()
         self.s.connect((
-            self.control_host,
+            self.host,
             self.control_port
         ))
-        self.s.send('Authenticate "%s"\r\n' % self.password)
-        if not '250' in self.s.recv(1024):
-            return False
-        self.s.send('signal newnym\r\n')
-        if not '250' in self.s.recv(1024):
-            return False
-        self.s.close()
+        try:
+            self.s.send('Authenticate "%s"\r\n' % self.password)
+            if not '250' in self.s.recv(1024):
+                raise ValueError('Authenticate error. Wrong password may be.')
+
+            self.s.send('signal newnym\r\n')
+            if not '250' in self.s.recv(1024):
+                raise ValueError('New identity signal error')
+        except ValueError, err:
+            print err
+        finally:
+            self.s.close()
         self.random_client()
+        print 'Wait for identity change...'
         time.sleep(10)
+        print 'New identity - OK'
         return True
+
+    def quit(self, msg=1):
+        sys.exit(msg)
 
     def fingerprint(
             self,
@@ -445,7 +456,6 @@ class Troxy(object):
                 response_obj['body'] = f.read()
             else:
                 response_obj['body'] = r.read()
-        print self.cookie
         return response_obj
 
     def get(self, url='', data=None):
