@@ -33,7 +33,7 @@
 
 __author__ = 'Vasily Asakasinsky'
 __license__ = "MIT"
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 __maintainer__ = "Vasily Asakasinsky"
 __email__ = "asakasinsky@gmail.com"
 __status__ = "Development"
