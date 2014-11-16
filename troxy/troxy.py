@@ -54,11 +54,20 @@ import urllib
 from urllib2 import Request, urlopen, URLError, HTTPPasswordMgrWithDefaultRealm
 from urllib2 import HTTPBasicAuthHandler, build_opener, install_opener
 from urllib2 import HTTPRedirectHandler, HTTPCookieProcessor
+from urllib2 import HTTPError
 
 
 from BaseHTTPServer import BaseHTTPRequestHandler
 from StringIO import StringIO
 import gzip
+
+
+
+
+
+
+import requests
+import requesocks
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 RESOURCES_DIR = os.path.join(CURRENT_DIR, 'resources')
@@ -103,26 +112,29 @@ class Troxy(object):
         password='mypassword',
         follow_redirect=False
     ):
-        # Storing original
-        self.__socket = socket.socket
-        self.__getaddrinfo = socket.getaddrinfo
-
-        self.proxytype = proxytype
+        self.proxytype = proxytype.lower()
         self.timeout = timeout
         self.host = host
         self.port = port
+
         self.control_port = control_port
         self.password = password
+
+        self.regular_session = requests.Session()
+        self.proxied_session = requesocks.session()
+
+        self.session = None
+
         self.follow_redirect = follow_redirect
 
         self.cookie = cookielib.CookieJar()
-        socket.setdefaulttimeout(self.timeout)
 
         self.set(
             proxytype=self.proxytype,
             host=self.host,
             port=self.port,
         )
+        self.off()
 
         self.running = False
         self.useragents = None
@@ -237,38 +249,38 @@ class Troxy(object):
 
     def set(self, **kwargs):
         if len(kwargs):
-            print kwargs['host']
             for key in kwargs:
                 setattr(self, key, kwargs[key])
-        socks.set_default_proxy(
-            getattr(socks, self.proxytype.upper()),
-            self.host,
-            self.port
-        )
+        self.proxied_session.proxies = {
+            'http': '%s://%s:%s' % (
+                self.proxytype,
+                self.host,
+                self.port
+            ),
+            'https': '%s://%s:%s' % (
+                self.proxytype,
+                self.host,
+                self.port
+            ),
+        }
 
     def on(self, **kwargs):
-        """
-        Monkeypatching the entire standard library with a single default proxy
-        """
-        socket.socket = socks.socksocket
-        socket.getaddrinfo = self.__dns_patch
+        self.session = self.proxied_session
         self.running = True
 
     def off(self):
-        """
-        Returns socket to original state (no proxy)
-        """
-        socket.socket = self.__socket
-        socket.getaddrinfo = self.__getaddrinfo
+        self.session = self.regular_session
         self.running = False
 
     def is_tor(self):
         """
         Checks if tor is properly enabled
         """
-        if "Sorry. You are not using Tor." in self.get(
+        res = self.get(
             'https://check.torproject.org/'
-        ):
+        )['text']
+        print res
+        if res.find('This browser is configured to use Tor.') < 1:
             return False
         return True
 
@@ -293,7 +305,7 @@ class Troxy(object):
         HashedControlPassword hashe-from-your-password
         CookieAuthentication 0
         """
-        self.s = self.__socket()
+        self.s = socket.socket()
         self.s.connect((
             self.host,
             self.control_port
@@ -351,12 +363,18 @@ class Troxy(object):
         indent = 0
         filtered_data = {}
 
-        json_string = self.get(url='http://headers.jsontest.com/')['body']
+        json_string = self.get(url='http://headers.jsontest.com/')['text']
         if json_string:
-            self.__fingerprint_store = json.loads(json_string)
-        json_string = self.get(url='http://ip.jsontest.com/')['body']
+            try:
+                self.__fingerprint_store = json.loads(json_string)
+            except Exception:
+                return None
+        json_string = self.get(url='http://ip.jsontest.com/')['text']
         if json_string:
-            self.__fingerprint_store['ip'] = json.loads(json_string)['ip']
+            try:
+                self.__fingerprint_store['ip'] = json.loads(json_string)['ip']
+            except Exception:
+                return None
         else:
             return None
 
@@ -402,13 +420,19 @@ class Troxy(object):
             },
             'url': '',
             'info': {},
-            'body': '',
+            'text': '',
             'redirected': False,
             'error': None,
             'raw': None
         }
 
     def __message_obj(self, code):
+        # BaseHTTPServer.BaseHTTPRequestHandler.responses is a useful
+        # dictionary of response codes in that shows all the response
+        # codes used by RFC 2616. The dictionary is reproduced here for
+        # convenience
+        # Table mapping response codes to messages; entries have the
+        # form {code: (shortmessage, longmessage)}.
         message = {}
         if code in BaseHTTPRequestHandler.responses:
             message['short'] = BaseHTTPRequestHandler.\
@@ -417,56 +441,43 @@ class Troxy(object):
                 responses[int(code)][1]
         return message
 
-    def __request(self, req=None):
-        """
-        Fetching an URL.
-        """
-        response_obj = self.__response_tpl()
-        if not req:
-            return None
-
-        for header in self.headers:
-            req.add_header(header, self.headers[header])
+    def __request(self, method='GET', url='', data={}):
+        response = self.__response_tpl()
+        req = getattr(
+            self.session,
+            method.lower()
+        )
 
         try:
-            r = urlopen(req)
-        except socks.GeneralProxyError, e:
-            print 'Socket error', e
-        except URLError, e:
-            if hasattr(e, 'reason'):
-                response_obj['error'] = e.reason
-                if hasattr(e, 'code'):
-
-                    response_obj['code'] = int(e.code)
-                    response_obj['message'] = self.__message_obj(e.code)
-            response_obj['url'] = e.geturl()
-            return False
-        else:
-            # Status 200, OK
-            if 'redirected' in r.__dict__:
-                response_obj['redirected'] = r.redirected
-            response_obj['raw'] = r
-            response_obj['url'] = r.geturl()
-            response_obj['info'] = r.info()
-            response_obj['code'] = int(r.getcode())
-            response_obj['message'] = self.__message_obj(r.getcode())
-            if r.info().get('Content-Encoding') == 'gzip':
-                buf = StringIO(r.read())
-                f = gzip.GzipFile(fileobj=buf)
-                response_obj['body'] = f.read()
-            else:
-                response_obj['body'] = r.read()
-        return response_obj
+            r = req(
+                url,
+                data=data,
+                headers=self.headers,
+                allow_redirects=self.follow_redirect,
+                timeout=self.timeout
+            )
+            response['text'] = r.text
+            response['code'] = r.status_code
+        except Exception as e:
+            print 'Error: %s' % (e)
+        return response
 
     def get(self, url='', data=None):
         """
         HTTP GET method.
         """
-        if data:
-            data = urllib.urlencode(data)
-            url = url+'?'+data
-        req = Request(url=url)
-        return self.__request(req)
+        # if not data:
+        #     return "There are not POST data"
+            # data = urllib.urlencode(data)
+            # url = url+'?'+data
+        # req = Request(url=url)
+        # return self.__request(req)
+        # self.session.headers.update(self.headers)
+        return self.__request(
+            method='GET',
+            url=url,
+            data=data
+        )
 
     def post(self, url='', data=None):
         """
@@ -474,10 +485,17 @@ class Troxy(object):
         """
         if not data:
             return "There are not POST data"
-        data = urllib.urlencode(data)
-        req = Request(url=url)
-        req.add_data(data)
-        return self.__request(req)
+        # data = urllib.urlencode(data)
+        # req = Request(url=url)
+        # req.add_data(data)
+        # return self.__request(req)
+
+        # self.session.headers.update(self.headers)
+        return self.__request(
+            method='POST',
+            url=url,
+            data=data
+        )
 
 """
 https://github.com/tarampampam/random-user-agent/blob/master/background.js
