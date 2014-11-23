@@ -46,25 +46,8 @@ import time
 import json
 
 import socket
-import socks
-
-import cookielib
-
-import urllib
-from urllib2 import Request, urlopen, URLError, HTTPPasswordMgrWithDefaultRealm
-from urllib2 import HTTPBasicAuthHandler, build_opener, install_opener
-from urllib2 import HTTPRedirectHandler, HTTPCookieProcessor
-from urllib2 import HTTPError
-
 
 from BaseHTTPServer import BaseHTTPRequestHandler
-from StringIO import StringIO
-import gzip
-
-
-
-
-
 
 import requests
 import requesocks
@@ -72,30 +55,6 @@ import requesocks
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 RESOURCES_DIR = os.path.join(CURRENT_DIR, 'resources')
 USER_AGENT_FILE = os.path.join(RESOURCES_DIR, 'user-agents.json')
-
-
-class RedirectHandler(HTTPRedirectHandler):
-    def __init__(self, follow=False):
-        self.follow = follow
-
-    def http_error_302(self, req, fp, code, msg, headers):
-        if not self.follow:
-            result = urllib.addinfourl(fp, headers, req.get_full_url())
-            result.status = code
-            result.code = code
-            print 'REDIRECT STOPPED'
-            return result
-        else:
-            # redirects = []
-            # redirects.append(headers['location'])
-            result = HTTPRedirectHandler.http_error_302(
-                self, req, fp, code, msg, headers)
-            result.status = code
-            result.redirected = True
-            print 'REDIRECTED %s' % (code)
-            return result
-
-    http_error_301 = http_error_303 = http_error_307 = http_error_302
 
 
 class Troxy(object):
@@ -127,7 +86,7 @@ class Troxy(object):
 
         self.follow_redirect = follow_redirect
 
-        self.cookie = cookielib.CookieJar()
+        self.cookies = {}
 
         self.set(
             proxytype=self.proxytype,
@@ -148,28 +107,6 @@ class Troxy(object):
         }
         self.__load_useragents()
 
-    def basic_auth(self, top_level_url=None, username=None, password=None,):
-        if (not username or not password or not top_level_url):
-            return False
-        # create a password manager
-        password_mgr = HTTPPasswordMgrWithDefaultRealm()
-
-        # Add the username and password.
-        # If we knew the realm, we could use it instead of ``None``.
-        password_mgr.add_password(None, top_level_url, username, password)
-
-        handler = HTTPBasicAuthHandler(password_mgr)
-
-        # create "opener" (OpenerDirector instance)
-        opener = build_opener(
-            handler,
-            RedirectHandler(
-                follow=self.follow_redirect
-            ),
-            HTTPCookieProcessor(self.cookie)
-        )
-        install_opener(opener)
-
     def __load_useragents(self):
         try:
             f = open(USER_AGENT_FILE, 'r')
@@ -181,6 +118,10 @@ class Troxy(object):
                 self.useragents = json.load(f)['uadata']
                 self.random_client()
                 return True
+
+    def clear_cookies(self):
+        self.session.cookies.clear()
+        self.cookies = {}
 
     def random_client(self):
         """
@@ -357,13 +298,18 @@ class Troxy(object):
         As default, fingerprint will return as JSON dict.
 
         Example:
-        self.fingerprint('user_agent', 'ip_addr', plain=True)
+            print proxy.fingerprint()
+            print proxy.fingerprint('ip', 'User-Agent')
+            print proxy.fingerprint('ip', 'User-Agent', plain=True)
         """
         frmt = []
         indent = 0
         filtered_data = {}
-
-        json_string = self.get(url='http://headers.jsontest.com/')['text']
+        try:
+            json_string = self.get(url='http://headers.jsontest.com/')['text']
+        except Exception as e:
+            print 'Cannt get fingerprint. %s' % e
+            return None
         if json_string:
             try:
                 self.__fingerprint_store = json.loads(json_string)
@@ -423,6 +369,7 @@ class Troxy(object):
             'text': '',
             'redirected': False,
             'error': None,
+            'cookies': None,
             'raw': None
         }
 
@@ -447,50 +394,43 @@ class Troxy(object):
             self.session,
             method.lower()
         )
-
         try:
             r = req(
                 url,
                 data=data,
                 headers=self.headers,
+                cookies=self.cookies,
                 allow_redirects=self.follow_redirect,
                 timeout=self.timeout
             )
             response['text'] = r.text
+            try:
+                self.cookies = r.cookies.get_dict()
+            except:
+                pass
+            response['cookies'] = self.cookies
             response['code'] = r.status_code
+            response['message'] = self.__message_obj(response['code'])
         except Exception as e:
             print 'Error: %s' % (e)
         return response
 
-    def get(self, url='', data=None):
+    def get(self, url='', data={}):
         """
         HTTP GET method.
         """
-        # if not data:
-        #     return "There are not POST data"
-            # data = urllib.urlencode(data)
-            # url = url+'?'+data
-        # req = Request(url=url)
-        # return self.__request(req)
-        # self.session.headers.update(self.headers)
         return self.__request(
             method='GET',
             url=url,
             data=data
         )
 
-    def post(self, url='', data=None):
+    def post(self, url='', data={}):
         """
         HTTP POST method.
         """
         if not data:
             return "There are not POST data"
-        # data = urllib.urlencode(data)
-        # req = Request(url=url)
-        # req.add_data(data)
-        # return self.__request(req)
-
-        # self.session.headers.update(self.headers)
         return self.__request(
             method='POST',
             url=url,
