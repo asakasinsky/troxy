@@ -412,7 +412,7 @@ class Troxy(object):
             response['code'] = r.status_code
             response['message'] = self.__message_obj(response['code'])
         except Exception as e:
-            print 'Error: %s' % (e)
+            print 'Troxy Error: %s' % (e)
         return response
 
     def get(self, url='', data={}):
